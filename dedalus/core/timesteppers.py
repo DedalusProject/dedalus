@@ -84,6 +84,7 @@ class MultistepIMEX:
         self.F = F = deque()
         # For adjoint timestepping
         self.Y = Y = deque()
+        self.Y_sum = CoeffSystem(solver.subproblems, dtype=solver.dtype)
         self.a_deque = deque()
         self.b_deque = deque()
         self.c_deque = deque()
@@ -105,33 +106,17 @@ class MultistepIMEX:
         self.Y_fields = []
         for field in solver.F:
             field_adj = field.get_cotangent()
-            # Zero the system
             field_adj.preset_layout('c')
             field_adj.data.fill(0)
-            if field.name:
-                # If the direct field has a name, give the adjoint a
-                # corresponding name
-                field_adj.name = 'Y_adj%s' % field.name
             self.Y_fields.append(field_adj)
         self.F_expression_list = ExpressionList(solver.evaluator, [eqn['F'] for eqn in solver.problem.equations if not isinstance(eqn['F'], Field)])
         # TODO: How to handle checkpointing?
         self.timestep_history = []
-        self.cotangents = {}
+        self.F_cotangents = {}
         for i, eqn in enumerate(solver.problem.equations):
             # TODO: Fix this when fields have vjp
             if not isinstance(eqn['F'], Field):
-                self.cotangents[eqn['F']] = self.Y_fields[i]
-        self.dFdxH_Y = []
-        for field in solver.state:
-            field_adjoint = field.get_cotangent()
-            field_adjoint.change_scales(field.domain.dealias)
-            self.cotangents[field] = field_adjoint
-            self.dFdxH_Y.append(field_adjoint)
-        self.eqn_list = [eqn['F'] for eqn in solver.problem.equations]
-        # TODO: Is there a better place to cache these hermitian matrices?
-        for sp in solver.subproblems:
-            sp.M_min_H = np.conj(sp.M_min).T.tocsr()
-            sp.L_min_H = np.conj(sp.L_min).T.tocsr()
+                self.F_cotangents[eqn['F']] = self.Y_fields[i]
 
     def reset(self):
         """Reset timestepper so that it can be reused"""
@@ -234,18 +219,17 @@ class MultistepIMEX:
         # Update solver
         solver.sim_time += dt
 
-    def step_adjoint(self, dt, wall_time):
+    def step_adjoint(self, dt, wall_time, cotangents):
         """Advance adjoint by one timestep."""
         # Solver references
         solver = self.solver
         subproblems = solver.subproblems
-        state_fields = solver.state_adj
+        state_cotangents = [cotangents[field] for field in solver.state]
         Y_fields = self.Y_fields
         STORE_EXPANDED_MATRICES = solver.store_expanded_matrices
         # Other references
         MX = self.MX
         LX = self.LX
-        F = self.F
         Y = self.Y
         a = self.a_deque
         b = self.b_deque
@@ -263,11 +247,9 @@ class MultistepIMEX:
         # Update RHS components and LHS matrices
         MX.rotate()
         LX.rotate()
-        F.rotate()
         Y.rotate()
         MX0 = MX[0]
         LX0 = LX[0]
-        F0  = F[0]
         Y0  = Y[0]
         a0 = a[0][0]
         b0 = b[0][0]
@@ -276,7 +258,6 @@ class MultistepIMEX:
         # Clear current deque
         MX0.data.fill(0)
         LX0.data.fill(0)
-        F0.data.fill(0)
         Y0.data.fill(0)
         # Solve, form L, M, F terms, then form next RHS
         # Ensure coeff space before subsystem gathers
@@ -293,58 +274,51 @@ class MultistepIMEX:
                     sp.LHS = (a0*sp.M_min + b0*sp.L_min)  # CREATES TEMPORARY
                 sp.LHS_solver = solver.matsolver(sp.LHS, solver)
         # Ensure coeff space before subsystem gathers
-        for field in state_fields:
+        for field in state_cotangents:
             field.require_coeff_space()
         for sp in subproblems:
             # Slice out valid subdata, skipping invalid components
-            spRHS = sp.gather_inputs(state_fields)
+            spRHS = sp.gather_inputs(state_cotangents)
             spX = sp.LHS_solver.solve_H(spRHS)  # CREATES TEMPORARY
-            # TODO: Do something better for the csr conversion
-            apply_sparse(sp.M_min_H, spX, axis=0, out=MX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
-            apply_sparse(sp.L_min_H, spX, axis=0, out=LX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
-            np.copyto(Y0.get_subdata(sp),spX)
+            apply_sparse(sp.M_min, spX, axis=0, out=MX0.get_subdata(sp), adjoint=True)  # Rectangular dot product skipping shape checks
+            apply_sparse(sp.L_min, spX, axis=0, out=LX0.get_subdata(sp), adjoint=True)  # Rectangular dot product skipping shape checks
+            np.copyto(Y0.get_subdata(sp), spX)
         sum_len = np.min([len(c), solver.stop_iteration-self._iteration])
-        # Cache VJPs where solver.state does not change
-        id = uuid.uuid4()
         # Calculate linearised F for all steps
-        for j in range(sum_len):
-            for sp in subproblems:
-                sp.scatter_outputs(Y[j].get_subdata(sp), Y_fields)
-            # Clean cotangents before accumulation
-            for field in self.cotangents.keys():
-                if field not in self.eqn_list:
-                    self.cotangents[field].preset_layout('c')
-                    self.cotangents[field].data.fill(0)
-            # Loop over equations and accumulate cotangents
-            _, self.cotangents = self.F_expression_list.evaluate_vjp(self.cotangents, id=id)
-            # Require coeff space before gathers
-            for field in self.dFdxH_Y:
-                field.require_coeff_space()
-            for sp in subproblems:
-                sp.gather_inputs(self.dFdxH_Y, out=F[j].get_subdata(sp))
-            # Accumulate parameter sensitivities here
-            # NOTE: Currently for parameters in F only
-            for field_adj, field in zip(self.solver.parameters_adj, self.solver.parameters):
-                field_adj.preset_layout('c')
-                self.cotangents[field].require_coeff_space()
-                # field_adj.data += c[j][j+1]*self.cotangents[field].data
-                if field_adj.data.size:
-                    axpy(a=c[j][j+1], x=self.cotangents[field].data.ravel(), y=field_adj.data.ravel())
+        # As Jacobian does not change do the step-weight sum on the cotangents so can 
+        # accumulate sensitivities with a single VJP
+        np.multiply(c[0][1], Y[0].data, out=self.Y_sum.data)
+        for j in range(2, sum_len + 1):
+            # Y_sum.data += c[j] * Y[j-1].data
+            axpy(a=c[j-1][j], x=Y[j-1].data, y=self.Y_sum.data)
+        for sp in subproblems:
+            sp.scatter_outputs(self.Y_sum.get_subdata(sp), Y_fields)
+        # Set F cotangents and clean state cotangents
+        cotangents.update(self.F_cotangents) # Only matters first time, F needs cotangents
+        for adjoint in state_cotangents:
+            # adjoint state accumulates separately
+            adjoint.preset_layout('c')
+            adjoint.data.fill(0)
+        # Loop over equations and accumulate cotangents
+        _, cotangents = self.F_expression_list.evaluate_vjp(cotangents, id=uuid.uuid4())
+        # Require coeff space before gathers
+        for field in state_cotangents:
+            field.require_coeff_space()
+        for sp in subproblems:
+            sp.gather_inputs(state_cotangents, out=RHS.get_subdata(sp))
         if RHS.data.size:
-            np.multiply(c[0][1], F0.data, out=RHS.data)
-            for j in range(2, sum_len + 1):
-                # RHS.data += c[j] * F[j-1].data
-                axpy(a=c[j-1][j], x=F[j-1].data, y=RHS.data)
+            # RHS already contains contribution from F
+            # Now accumulate contributions from M and L
             for j in range(1, sum_len+1):
                 # RHS.data -= a[j] * MX[j-1].data
                 axpy(a=-a[j-1][j], x=MX[j-1].data, y=RHS.data)
             for j in range(1, sum_len+1):
                 # RHS.data -= b[j] * LX[j-1].data
                 axpy(a=-b[j-1][j], x=LX[j-1].data, y=RHS.data)
-        for field in state_fields:
+        for field in state_cotangents:
             field.preset_layout('c')
         for sp in subproblems:
-            sp.scatter_inputs(RHS.get_subdata(sp), state_fields)
+            sp.scatter_inputs(RHS.get_subdata(sp), state_cotangents)
         # Update self.dt
         # TODO: For now use timestep history to get correct self.dt deque,
         # need to think about how step_adjoint is handled wrt dt.
@@ -717,36 +691,23 @@ class RungeKuttaIMEX:
         # For adjoint
         self.MXT = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
         self.Y = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
+        self.Y_sum = CoeffSystem(solver.subproblems, dtype=solver.dtype)
         self.XStages = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
-        self.timestep_history = []
+        # For the adjoint
         self.Y_fields = []
         for field in solver.F:
             field_adj = field.get_cotangent()
-            # Zero the system
             field_adj.preset_layout('c')
             field_adj.data.fill(0)
-            if field.name:
-                # If the direct field has a name, give the adjoint a
-                # corresponding name
-                field_adj.name = 'Y_adj%s' % field.name
             self.Y_fields.append(field_adj)
         self.F_expression_list = ExpressionList(solver.evaluator, [eqn['F'] for eqn in solver.problem.equations if not isinstance(eqn['F'], Field)])
-        self.cotangents = {}
+        # TODO: How to handle checkpointing?
+        self.timestep_history = []
+        self.F_cotangents = {}
         for i, eqn in enumerate(solver.problem.equations):
             # TODO: Fix this when fields have vjp
             if not isinstance(eqn['F'], Field):
-                self.cotangents[eqn['F']] = self.Y_fields[i]
-        self.dFdxH_Y = []
-        for field in solver.state:
-            field_adjoint = field.get_cotangent()
-            field_adjoint.change_scales(field.domain.dealias)
-            self.cotangents[field] = field_adjoint
-            self.dFdxH_Y.append(field_adjoint)
-        self.eqn_list = [eqn['F'] for eqn in solver.problem.equations]
-        # Just for now
-        for sp in solver.subproblems:
-            sp.M_min_H = np.conj(sp.M_min).T.tocsr()
-            sp.L_min_H = np.conj(sp.L_min).T.tocsr()
+                self.F_cotangents[eqn['F']] = self.Y_fields[i]
 
     def reset(self):
         """Reset timestepper so that it can be reused"""
@@ -848,7 +809,7 @@ class RungeKuttaIMEX:
                     np.copyto(self.XStages[i].get_subdata(sp), spX)
             solver.sim_time = sim_time_0 + k*c[i]
 
-    def step_adjoint(self, dt, wall_time):
+    def step_adjoint(self, dt, wall_time, cotangents):
         """Advance solver by one timestep."""
         # Recompute stages and matrices
         # TODO: Should only do this if necessary, otherwise
@@ -857,7 +818,7 @@ class RungeKuttaIMEX:
         # Solver references
         solver = self.solver
         subproblems = solver.subproblems
-        state_fields = solver.state_adj
+        state_cotangents = [cotangents[field] for field in solver.state]
         Y_fields = self.Y_fields
         Y = self.Y
         XStages = self.XStages
@@ -866,7 +827,6 @@ class RungeKuttaIMEX:
         # Other references
         RHS = self.RHS
         LX = self.LX
-        F = self.F
         A = self.A
         H = self.H
         c = self.c
@@ -891,12 +851,12 @@ class RungeKuttaIMEX:
         #         sp.LHS_solvers = [None] * (self.stages+1)
         # Final time condition
         # Ensure coeff space before subsystem gathers
-        for field in state_fields:
+        for field in state_cotangents:
             field.require_coeff_space()
         RHS.data.fill(0)
         for sp in subproblems:
             # Use adjoint state for RHS
-            np.copyto(RHS.get_subdata(sp), sp.gather_inputs(state_fields))
+            np.copyto(RHS.get_subdata(sp), sp.gather_inputs(state_cotangents))
         # Compute stages
         for i in reversed(range(1, self.stages+1)):
             # Update sim_time before evaluators
@@ -911,7 +871,7 @@ class RungeKuttaIMEX:
             MXTi.data.fill(0)
             k_Hii = k * H[i,i]
             # Ensure coeff space before subsystem scatters
-            for field in state_fields:
+            for field in state_cotangents:
                 field.preset_layout('c')
             for field in solver.state:
                 field.preset_layout('c')
@@ -931,47 +891,39 @@ class RungeKuttaIMEX:
                 spRHS = RHS.get_subdata(sp)
                 spX = sp.LHS_solvers[i].solve_H(spRHS)  # CREATES TEMPORARY
                 # Compute new transpose terms and RHS
-                # TODO: Do something better for the csr conversion
-                apply_sparse(sp.L_min_H, spX, axis=0, out=LXi.get_subdata(sp))  # Rectangular dot product skipping shape checks
-                apply_sparse(sp.M_min_H, spX, axis=0, out=MXTi.get_subdata(sp))
-                sp.scatter_inputs(spX, state_fields)
+                apply_sparse(sp.L_min, spX, axis=0, out=LXi.get_subdata(sp), adjoint=True)  # Rectangular dot product skipping shape checks
+                apply_sparse(sp.M_min, spX, axis=0, out=MXTi.get_subdata(sp), adjoint=True)
                 # Linearised F vjp
                 sp.scatter_inputs(XStages[i-1].get_subdata(sp), solver.state)
                 np.copyto(Y[i-1].get_subdata(sp),spX)
-            # Cache VJPs where solver.state does not change
-            id = uuid.uuid4()
             # Note, similar code here to MultistepIMEX
-            for j in range(i,self.stages+1):  
-                F[j-1].data.fill(0)
-                for field in Y_fields:
-                    field.preset_layout('c')
-                for sp in subproblems:
-                    sp.scatter_outputs(Y[j-1].get_subdata(sp), Y_fields)
-                # Clean cotangents before accumulation
-                for field in self.cotangents.keys():
-                    if field not in self.eqn_list:
-                        self.cotangents[field].preset_layout('c')
-                        self.cotangents[field].data.fill(0)
-                # Loop over equations and accumulate cotangents
-                _, self.cotangents = self.F_expression_list.evaluate_vjp(self.cotangents, id=id)
-                # Require coeff space before gathers
-                for field in self.dFdxH_Y:
-                    field.require_coeff_space()
-                for sp in subproblems:
-                    sp.gather_inputs(self.dFdxH_Y, out=F[j-1].get_subdata(sp))
-                # Accumulate parameter sensitivities here
-                # NOTE: Currently for parameters in F only
-                for field_adj, field in zip(self.solver.parameters_adj, self.solver.parameters):
-                    field_adj.preset_layout('c')
-                    self.cotangents[field].require_coeff_space()
-                    # field_adj.data += k*A[j,i-1]*self.cotangents[field].data
-                    if field_adj.data.size:
-                        axpy(a=(k*A[j,i-1]), x=self.cotangents[field].data.ravel(), y=field_adj.data.ravel())
+            # Calculate linearised F for all steps
+            # As Jacobian does not change do the step-weight sum on the cotangents so can 
+            # accumulate sensitivities with a single VJP
+            np.multiply(k*A[i,i-1], Y[i-1].data, out=self.Y_sum.data)
+            for j in range(i+1, self.stages+1):
+                # Y_sum.data += (k * A[j,i]) * Y[j-1].data
+                axpy(a=(k*A[j,i-1]), x=Y[j-1].data, y=self.Y_sum.data)
+            for field in Y_fields:
+                field.preset_layout('c')
+            for sp in subproblems:
+                sp.scatter_outputs(self.Y_sum.get_subdata(sp), Y_fields)
+            # Set F cotangents and clean state cotangents
+            cotangents.update(self.F_cotangents) # Only matters first time, F needs cotangents
+            for adjoint in state_cotangents:
+                # adjoint state accumulates separately
+                adjoint.preset_layout('c')
+                adjoint.data.fill(0)
+            # Loop over equations and accumulate cotangents
+            _, cotangents = self.F_expression_list.evaluate_vjp(cotangents, id=uuid.uuid4())
+            # Require coeff space before gathers
+            for field in state_cotangents:
+                field.require_coeff_space()
+            for sp in subproblems:
+                sp.gather_inputs(state_cotangents, out=RHS.get_subdata(sp))
             if RHS.data.size:
-                RHS.data.fill(0)
+                # RHS already contains contribution from F
                 for j in range(i, self.stages+1):
-                    # RHS.data += (k * A[j,i]) * FT[j-1].data
-                    axpy(a=(k*A[j,i-1]), x=F[j-1].data, y=RHS.data)
                     # RHS.data -= (k * H[j,i]) * LXT[j].data
                     axpy(a=-(k*H[j,i-1]), x=LX[j-1].data, y=RHS.data)
         # At last stage add on MXT terms
@@ -980,12 +932,12 @@ class RungeKuttaIMEX:
                 # RHS.data += (1 * H[j,0]) * MXT[j].data
                 axpy(a=1, x=MXT[j-1].data, y=RHS.data)
         # Ensure coeff space before subsystem scatters
-        for field in state_fields:
+        for field in state_cotangents:
             field.preset_layout('c')
         for sp in subproblems:
             # Adjoint state is the RHS (Use pre-right to undo pre-conditioned RHS)
             spRHS = RHS.get_subdata(sp)
-            sp.scatter_inputs(spRHS, state_fields)
+            sp.scatter_inputs(spRHS, state_cotangents)
 
 @add_scheme
 class RK111(RungeKuttaIMEX):

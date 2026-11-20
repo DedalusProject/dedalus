@@ -2822,6 +2822,34 @@ class ConvertConstantDisk(operators.ConvertConstant, operators.PolarMOperator):
         else:
             raise ValueError("This should never happen.")
 
+    def _operate(self, args, out, adjoint=False):
+        """Perform operation."""
+        arg = args[0]
+        basis = self.output_basis
+        axis = self.dist.last_axis(basis.radial_basis)
+        # Set output layout
+        if not adjoint:
+            out.data[:] = 0
+        # Return early for size-zero data
+        if arg.data.size == 0 or out.data.size == 0:
+            return
+        # Apply operator
+        for m, mg_slice, mc_slice, n_slice in basis.m_maps(self.dist):
+            if m == 0:
+                # Modify mc_slice to ignore sin component
+                slices = [slice(None) for i in range(self.dist.dim)]
+                slices[axis-1] = slice(mc_slice.start, mc_slice.start+1)
+                slices[axis] = n_slice
+                slices = tuple(slices)
+                vec_in  = arg.data[slices]
+                vec_out = out.data[slices]
+                A = self.radial_matrix((), (), m)
+                if adjoint:
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True)
+                else:
+                    A = self.radial_matrix((), (), m)
+                    vec_out += apply_matrix(A, vec_in, axis=axis)
+
 
 class ConvertConstantAnnulus(operators.ConvertConstant, operators.PolarMOperator):
 
@@ -2851,6 +2879,33 @@ class ConvertConstantAnnulus(operators.ConvertConstant, operators.PolarMOperator
             return matrix
         else:
             raise ValueError("This should never happen.")
+
+    def _operate(self, args, out, adjoint=False):
+        """Perform operation."""
+        arg = args[0]
+        basis = self.output_basis
+        axis = self.dist.last_axis(basis.radial_basis)
+        # Set output layout
+        if not adjoint:
+            out.data[:] = 0
+        # Return early for size-zero data
+        if arg.data.size == 0 or out.data.size == 0:
+            return
+        # Apply operator
+        for m, mg_slice, mc_slice, n_slice in basis.m_maps(self.dist):
+            if m == 0:
+                # Modify mc_slice to ignore sin component
+                slices = [slice(None) for i in range(self.dist.dim)]
+                slices[axis-1] = slice(mc_slice.start, mc_slice.start+1)
+                slices[axis] = n_slice
+                slices = tuple(slices)
+                vec_in  = arg.data[slices]
+                vec_out = out.data[slices]
+                A = self.radial_matrix((), (), m)
+                if adjoint:
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True)
+                else:
+                    vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
 class SphereBasis(SpinBasis, metaclass=CachedClass):
@@ -4991,7 +5046,7 @@ class ConvertConstantBall(operators.ConvertConstant, operators.SphericalEllOpera
 
     def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        arg = self.args[0]
+        arg = args[0]
         basis = self.output_basis
         axis = self.dist.last_axis(basis.radial_basis)
         if not adjoint:
@@ -5010,11 +5065,10 @@ class ConvertConstantBall(operators.ConvertConstant, operators.SphericalEllOpera
                 slices = tuple(slices)
                 vec_in  = arg.data[slices]
                 vec_out = out.data[slices]
+                A = self.radial_matrix((), (), ell)
                 if adjoint:
-                    A_adj = self.radial_matrix_adjoint((), (), ell)
-                    vec_in += apply_matrix(A_adj, vec_out, axis=axis)  # TEMPORARY
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True)  # TEMPORARY
                 else:
-                    A = self.radial_matrix((), (), ell)
                     vec_out += apply_matrix(A, vec_in, axis=axis)  # TEMPORARY
 
 
@@ -5056,6 +5110,33 @@ class ConvertConstantShell(operators.ConvertConstant, operators.SphericalEllOper
         else:
             return sparse.csr_matrix((self.output_basis.n_size(ell), 0))
             #raise ValueError("This should never happen.")
+
+    def _operate(self, args, out, adjoint=False):
+        """Perform operation."""
+        arg = args[0]
+        basis = self.output_basis
+        axis = self.dist.last_axis(basis.radial_basis)
+        if not adjoint:
+            out.data[:] = 0
+        # Return early for size-zero data
+        if arg.data.size == 0 or out.data.size == 0:
+            return
+        # Apply operator
+        for ell, m_ind, ell_ind in basis.ell_maps(self.dist):
+            if ell == 0:
+                slices = [slice(None) for i in range(self.dist.dim)]
+                # Modify m slice to ignore sin component
+                slices[axis-2] = slice(m_ind.start, m_ind.start+1)
+                slices[axis-1] = ell_ind
+                slices[axis] = basis.n_slice(ell)
+                slices = tuple(slices)
+                vec_in  = arg.data[slices]
+                vec_out = out.data[slices]
+                A = self.radial_matrix((), (), ell)
+                if adjoint:
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True)  # TEMPORARY
+                else:
+                    vec_out += apply_matrix(A, vec_in, axis=axis)  # TEMPORARY
 
 
 class ConvertSpherical3D(operators.Convert, operators.SphericalEllOperator):
@@ -5136,31 +5217,35 @@ class PolarRadialInterpolate(operators.Interpolate, operators.PolarMOperator):
             matrix = U.T.conj() @ matrix
         return matrix
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
+        operand = args[0]
         input_basis = self.input_basis
-        output_basis = self.output_basis
         radial_basis = self.input_basis
         axis = self.last_axis
-        # Set output layout
-        out.preset_layout(operand.layout)
+        if adjoint:
+            temp = np.copy(out.data)
+            radial_basis.forward_spin_recombination(operand.tensorsig, axis, temp, out.data)
         # Apply operator
         S = radial_basis.spin_weights(operand.tensorsig)
         slices_in  = [slice(None) for i in range(self.dist.dim)]
         slices_out = [slice(None) for i in range(self.dist.dim)]
         for spinindex, spintotal in np.ndenumerate(S):
-           comp_in = operand.data[spinindex]
-           comp_out = out.data[spinindex]
-           for m, mg_slice, mc_slice, n_slice in input_basis.m_maps(self.dist):
-               slices_in[axis-1] = slices_out[axis-1] = mc_slice
-               slices_in[axis] = n_slice
-               vec_in  = comp_in[tuple(slices_in)]
-               vec_out = comp_out[tuple(slices_out)]
-               A = self.radial_matrix(spinindex, spinindex, m)
-               apply_matrix(A, vec_in, axis=axis, out=vec_out)
-        temp = np.copy(out.data)
-        radial_basis.backward_spin_recombination(operand.tensorsig, axis, temp, out.data)
+            comp_in = operand.data[spinindex]
+            comp_out = out.data[spinindex]
+            for m, mg_slice, mc_slice, n_slice in input_basis.m_maps(self.dist):
+                slices_in[axis-1] = slices_out[axis-1] = mc_slice
+                slices_in[axis] = n_slice
+                vec_in  = comp_in[tuple(slices_in)]
+                vec_out = comp_out[tuple(slices_out)]
+                A = self.radial_matrix(spinindex, spinindex, m)
+                if adjoint:
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True) # TEMPORARY
+                else:
+                    apply_matrix(A, vec_in, axis=axis, out=vec_out)
+        if not adjoint:
+            temp = np.copy(out.data)
+            radial_basis.backward_spin_recombination(operand.tensorsig, axis, temp, out.data)
 
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         position = self.position
@@ -5480,13 +5565,12 @@ class SphereAzimuthalAverage(AzimuthalAverage, operators.Average, operators.Spec
     subaxis_dependence = [True, False]  # Depends on m only
     subaxis_coupling = [False, False]  # No coupling
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
-        # Set output layout
+        operand = args[0]
         layout = operand.layout
-        out.preset_layout(layout)
-        out.data[:] = 0
+        if not adjoint:
+            out.data[:] = 0
         # Apply operator
         azimuth_axis = self.dist.first_axis(self.input_basis)
         domain_in = self.operand.domain
@@ -5500,7 +5584,10 @@ class SphereAzimuthalAverage(AzimuthalAverage, operators.Average, operators.Spec
         for spinindex, spintotal in np.ndenumerate(spincomps):
             comp_in = operand.data[spinindex]
             comp_out = out.data[spinindex]
-            comp_out[m0_out] = comp_in[m0_in]
+            if adjoint:
+                comp_in[m0_in] += comp_out[m0_out]
+            else:   
+                comp_out[m0_out] = comp_in[m0_in]
 
 
 class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.SpectralOperator):
@@ -5620,14 +5707,14 @@ class IntegrateSpinBasis(operators.PolarMOperator):
         # Wrap cached method
         return self._radial_matrix(self.radial_basis, m)
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
+        operand = args[0]
         basis = self.input_basis
         axis = self.dist.last_axis(self.radial_basis)
         # Set output layout
-        out.preset_layout(operand.layout)
-        out.data[:] = 0
+        if not adjoint:
+            out.data[:] = 0
         # Apply operator
         for m, mg_slice, mc_slice, n_slice in basis.m_maps(self.dist):
             if m == 0:
@@ -5639,7 +5726,10 @@ class IntegrateSpinBasis(operators.PolarMOperator):
                 vec_in  = operand.data[slices]
                 vec_out = out.data[slices]
                 A = self._radial_matrix(self.radial_basis, m)
-                vec_out += apply_matrix(A, vec_in, axis=axis)
+                if adjoint:
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True)
+                else:
+                    vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
 class IntegrateDisk(operators.Integrate, IntegrateSpinBasis):
@@ -5752,14 +5842,14 @@ class IntegrateSpherical(operators.SphericalEllOperator):
         # Wrap cached method
         return self._radial_matrix(self.radial_basis, ell)
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
+        operand = args[0]
         basis = self.input_basis
         axis = self.dist.last_axis(basis.radial_basis)
         # Set output layout
-        out.preset_layout(operand.layout)
-        out.data[:] = 0
+        if not adjoint:
+            out.data[:] = 0
         # Apply operator
         for ell, m_ind, ell_ind in basis.ell_maps(self.dist):
             if ell == 0:
@@ -5772,7 +5862,10 @@ class IntegrateSpherical(operators.SphericalEllOperator):
                 vec_in  = operand.data[slices]
                 vec_out = out.data[slices]
                 A = self.radial_matrix(None, None, ell)
-                vec_out += apply_matrix(A, vec_in, axis=axis)
+                if adjoint:
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True)
+                else:
+                    vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
 class IntegrateBall(operators.Integrate, IntegrateSpherical):
@@ -6019,33 +6112,36 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
             matrix = Q @ matrix
         return matrix
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
+        operand = args[0]
         input_basis = self.input_basis
-        output_basis = self.output_basis
         radial_basis = self.radial_basis
         axis = self.dist.last_axis(radial_basis)
-        # Set output layout
-        out.preset_layout(operand.layout)
+        if adjoint:
+            radial_basis.forward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data, ell_maps=input_basis.ell_maps(self.dist))
         # Apply operator
         R = radial_basis.regularity_classes(operand.tensorsig)
         slices_in  = [slice(None) for i in range(self.dist.dim)]
         slices_out = [slice(None) for i in range(self.dist.dim)]
         for regindex, regtotal in np.ndenumerate(R):
-           comp_in = operand.data[regindex]
-           comp_out = out.data[regindex]
-           for ell, m_ind, ell_ind in input_basis.ell_maps(self.dist):
-               allowed  = radial_basis.regularity_allowed(ell, regindex)
-               if allowed:
-                   slices_in[axis-2] = slices_out[axis-2] = m_ind
-                   slices_in[axis-1] = slices_out[axis-1] = ell_ind
-                   slices_in[axis] = radial_basis.n_slice(ell)
-                   vec_in  = comp_in[tuple(slices_in)]
-                   vec_out = comp_out[tuple(slices_out)]
-                   A = self.radial_matrix(regindex, regindex, ell)
-                   apply_matrix(A, vec_in, axis=axis, out=vec_out)
-        radial_basis.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data, ell_maps=input_basis.ell_maps(self.dist))
+            comp_in = operand.data[regindex]
+            comp_out = out.data[regindex]
+            for ell, m_ind, ell_ind in input_basis.ell_maps(self.dist):
+                allowed  = radial_basis.regularity_allowed(ell, regindex)
+                if allowed:
+                    slices_in[axis-2] = slices_out[axis-2] = m_ind
+                    slices_in[axis-1] = slices_out[axis-1] = ell_ind
+                    slices_in[axis] = radial_basis.n_slice(ell)
+                    vec_in  = comp_in[tuple(slices_in)]
+                    vec_out = comp_out[tuple(slices_out)]
+                    A = self.radial_matrix(regindex, regindex, ell)
+                    if adjoint:
+                        vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True) # TEMPORARY
+                    else:
+                        apply_matrix(A, vec_in, axis=axis, out=vec_out)
+        if not adjoint:
+            radial_basis.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data, ell_maps=input_basis.ell_maps(self.dist))
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
         position = self.position
@@ -6247,13 +6343,13 @@ class PolarAzimuthalComponent(operators.AzimuthalComponent):
             matrix = sparse.kron(matrix, sparse.eye(2))
         return matrix
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
-        # Set output layout
-        layout = operand.layout
-        out.preset_layout(layout)
-        np.copyto(out.data, operand.data[axindex(self.index,0)])
+        operand = args[0]
+        if adjoint:
+            operand.data[axindex(self.index,0)] += out.data
+        else:
+            np.copyto(out.data, operand.data[axindex(self.index,0)])
 
 
 class PolarRadialComponent(operators.RadialComponent):
@@ -6281,13 +6377,13 @@ class PolarRadialComponent(operators.RadialComponent):
             matrix = sparse.kron(matrix, sparse.eye(2))
         return matrix
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
-        # Set output layout
-        layout = operand.layout
-        out.preset_layout(layout)
-        np.copyto(out.data, operand.data[axindex(self.index,1)])
+        operand = args[0]
+        if adjoint:
+            operand.data[axindex(self.index,1)] += out.data
+        else:
+            np.copyto(out.data, operand.data[axindex(self.index,1)])
 
 
 class PolarAngularComponent(operators.AngularComponent):
@@ -6319,13 +6415,13 @@ class PolarAngularComponent(operators.AngularComponent):
 #        matrix = np.array(matrix)
         return matrix
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
-        # Set output layout
-        layout = operand.layout
-        out.preset_layout(layout)
-        np.copyto(out.data, operand.data[axindex(self.index,0)])
+        operand = args[0]
+        if adjoint:
+            operand.data[axindex(self.index,0)] += out.data
+        else:
+            np.copyto(out.data, operand.data[axindex(self.index,0)])
 
 
 class CartesianAdvectiveCFL(operators.AdvectiveCFL):

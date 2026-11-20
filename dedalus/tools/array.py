@@ -101,7 +101,7 @@ def move_single_axis(a, source, destination):
     return a.transpose(order)
 
 
-def apply_dense(matrix, array, axis, out=None, overwrite_out=True):
+def apply_dense(matrix, array, axis, out=None, overwrite_out=True, adjoint=False):
     """Apply dense matrix along any axis of an array."""
     dim = array.ndim
     # Resolve wraparound axis
@@ -114,7 +114,13 @@ def apply_dense(matrix, array, axis, out=None, overwrite_out=True):
         array_shape = array.shape
         array = array.reshape((array_shape[0], -1)) # May allocate copy
     # Apply matmul
-    temp = np.matmul(matrix, array) # Allocates temp
+    if adjoint:
+        if np.isrealobj(matrix):
+            temp = np.matmul(matrix.T, array) # Allocates temp
+        else:
+            temp = np.matmul(np.conj(matrix.T), array) # Allocates temp and copy of matrix
+    else:
+        temp = np.matmul(matrix, array) # Allocates temp
     # Unflatten later axes
     if dim > 2:
         temp = temp.reshape((temp.shape[0],) + array_shape[1:]) # View
@@ -178,7 +184,7 @@ def apply_sparse_dot(matrix, array, axis, out=None):
         return out
 
 
-def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=1, overwrite_out=True):
+def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=1, overwrite_out=True, adjoint=False):
     """
     Apply sparse matrix along any axis of an array.
     Must be out of place if output is specified.
@@ -186,10 +192,15 @@ def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=
     # Check matrix
     if not isinstance(matrix, sparse.csr_matrix):
         raise ValueError("Matrix must be in CSR format.")
+    # Input and output sizes
+    if adjoint:
+        N_out, N_in = matrix.shape[1], matrix.shape[0]
+    else:
+        N_out, N_in = matrix.shape
     # Check output
     if out is None:
         out_shape = list(array.shape)
-        out_shape[axis] = matrix.shape[0]
+        out_shape[axis] = N_out
         out = np.zeros(out_shape, dtype=array.dtype)
     elif out is array:
         raise ValueError("Cannot apply in place")
@@ -199,10 +210,10 @@ def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=
     if check_shapes:
         if not (0 <= axis < array.ndim):
             raise ValueError("Axis out of bounds.")
-        if matrix.shape[1] != array.shape[axis] or matrix.shape[0] != out.shape[axis]:
+        if N_in != array.shape[axis] or N_out != out.shape[axis]:
             raise ValueError("Matrix shape mismatch.")
     # Old way if requested
-    if OLD_CSR_MATVECS and array.ndim == 2 and axis == 0:
+    if OLD_CSR_MATVECS and array.ndim == 2 and axis == 0 and not adjoint:
         return csr_matvecs(matrix, array, out)
     # Promote datatypes
     # TODO: find way to optimize this with fused types
@@ -210,13 +221,13 @@ def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=
     if matrix_data.dtype != out.dtype:
         matrix_data = matrix_data.astype(out.dtype)
     # Call cython routine
-    cython_linalg.apply_csr(matrix.indptr, matrix.indices, matrix_data, array, out, axis, num_threads)
+    cython_linalg.apply_csr(matrix.indptr, matrix.indices, matrix_data, array, out, axis, num_threads, adjoint)
     return out
 
 
-def solve_upper_sparse(matrix, rhs, axis, out=None, check_shapes=False, num_threads=1):
+def solve_upper_sparse(matrix, rhs, axis, out=None, check_shapes=False, num_threads=1, adjoint=False):
     """
-    Solve upper triangular sparse matrix along any axis of an array.
+    Solve upper triangular sparse matrix (or its adjoint) along any axis of an array.
     Matrix assumed to be nonzero on the diagonals.
     """
     # Check matrix
@@ -240,7 +251,7 @@ def solve_upper_sparse(matrix, rhs, axis, out=None, check_shapes=False, num_thre
         if not (matrix.shape[0] == matrix.shape[1] == rhs.shape[axis]):
             raise ValueError("Matrix shape mismatch.")
     # Call cython routine
-    cython_linalg.solve_upper_csr(matrix.indptr, matrix.indices, matrix_data, out, axis, num_threads)
+    cython_linalg.solve_upper_csr(matrix.indptr, matrix.indices, matrix_data, out, axis, num_threads, adjoint)
 
 
 def solve_lower_sparse(matrix, rhs, axis, out=None, check_shapes=False, num_threads=1):

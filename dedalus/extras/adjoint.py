@@ -101,14 +101,13 @@ class direct_adjoint_loop:
                 A list of linaer Dedalus solvers to be excecuted
                 after solving the IVP
     """
-    def __init__(self, solver, max_iterations, timestep, cost_functional, pre_solvers=[], post_solvers=[], parameters=[]):
+    def __init__(self, solver, max_iterations, timestep, cost_functional, pre_solvers=[], post_solvers=[]):
         try:
             from checkpoint_schedules import StorageType
             self.StorageType = StorageType
         except:
             raise ImportError("Checkpoint schedules is required for this class")
         self.state = solver.state
-        self.parameters = parameters
         self.solver = solver
         self.solver.stop_iteration = max_iterations
         self.timestep = timestep
@@ -205,7 +204,7 @@ class direct_adjoint_loop:
         for step in range(n1, n0, - 1):
             for i, field in enumerate(self.adjoint_dependencies):
                 field['c'] = self.adjoint_dependency[self.StorageType.WORK][step-1][i]
-            self.solver.step_adjoint(self.timestep)
+            self.solver.step_adjoint(self.timestep, self.cotangents)
             if clear_adj_deps:
                 del self.adjoint_dependency[self.StorageType.WORK][step-1]
         step -= 1
@@ -292,19 +291,11 @@ class direct_adjoint_loop:
         self.cotangents = initialize_cotangents(self.J)
         for post_solver in reversed(self.post_solvers):
             self.cotangents = post_solver.compute_sensitivities(self.cotangents)
-        self.solver.parameters = self.parameters
-        self.solver.state_adj = []
-        self.solver.parameters_adj = []
         self.adjoint_state = []
-        for state in self.state + self.parameters:
+        for state in self.state:
             adjoint = self.get_or_create_adjoint(state)
             # Add adjoint to dal adjoint state for checkpointing
             self.adjoint_state.append(adjoint)
-            # Add state and parameter adjoints to solver seperately
-            if state in self.state:
-                self.solver.state_adj.append(adjoint)
-            else:
-                self.solver.parameters_adj.append(adjoint)
         self.adjoint_work_memory[self.StorageType.WORK][self.solver.stop_iteration] = copy.deepcopy([field['c'] for field in self.adjoint_state])
 
     def _store_data(self, data, step, storage, write_adj_deps, write_ics):

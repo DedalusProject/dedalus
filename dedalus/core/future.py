@@ -342,12 +342,15 @@ class Future(Operand):
             out = self.evaluate(id=id, force=force, tape=tape)
             self.last_tape = tape
 
-        # Clean cotangents
+        # Clean cotangents and set scales
         for op in tape:
             op.get_cotangent()
             if op is not self:
                 op.cotangent.preset_scales(op.domain.dealias)
                 op.cotangent.data.fill(0)
+            for arg in op.original_args:
+                if isinstance(arg, Field) and arg in cotangents:
+                    cotangents[arg].change_scales(arg.domain.dealias)
 
         # Copy input cotangent
         self.cotangent.preset_layout(cotangent.layout)
@@ -476,12 +479,15 @@ class ExpressionList:
             raise ValueError("id must be specified for vjp evaluation.")
         # Run forward evaluation and build joint tape (cached by id)
         out, tape = self.tape_evaluate(id, force=force)
-        # Clean cotangents
+        # Clean cotangents and set scales
         for op in tape:
             op.get_cotangent()
             if op not in self.expressions:
                 op.cotangent.preset_scales(op.domain.dealias)
                 op.cotangent.data.fill(0)
+            for arg in op.original_args:
+                if isinstance(arg, Field) and arg in cotangents:
+                    cotangents[arg].change_scales(arg.domain.dealias)
         # Initialize expression cotangents
         for expr in self.expressions:
             cotangent = cotangents[expr]

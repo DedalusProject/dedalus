@@ -493,10 +493,19 @@ class PowerFieldField(Power, FutureField):
             np.power(arg0_data, arg1_data, out=out.data)
             if tangent:
                 tan0, tan1 = self.arg_tangents
-                tangent.preset_layout(tan0.layout)
-                tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
-                tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
-                tangent.data[:] = arg1_data * arg0_data**(arg1_data-1) * tan0_data + out.data * np.log(arg0_data) * tan1_data
+                # One of tan0 or tan1 may be None
+                # tangent has same layout as arg0 (not None)
+                tangent.preset_layout(arg0.layout)
+                if tan0 is None:
+                    tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+                    tangent.data[:] = out.data * np.log(arg0_data) * tan1_data
+                elif tan1 is None:
+                    tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+                    tangent.data[:] = arg1_data * arg0_data**(arg1_data-1) * tan0_data
+                else:
+                    tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+                    tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+                    tangent.data[:] = arg1_data * arg0_data**(arg1_data-1) * tan0_data + out.data * np.log(arg0_data) * tan1_data
 
     def operate_vjp(self, layout, cotangents):
         arg0, arg1 = self.args
@@ -1194,11 +1203,6 @@ class SpectralOperator1D(SpectralOperator):
         # Caching layer to allow insertion of other arguments
         return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
 
-    def subspace_matrix_adjoint(self, layout):
-        """Build matrix operating on local subspace data."""
-        # Caching layer to allow insertion of other arguments
-        return self._subspace_matrix_adjoint(layout, self.input_basis, self.output_basis, self.first_axis)
-
     def group_matrix(self, group):
         return self._group_matrix(group, self.input_basis, self.output_basis)
 
@@ -1222,15 +1226,6 @@ class SpectralOperator1D(SpectralOperator):
             out_size = layout.local_shape(output_domain, scales=1)[axis]
             return sparse_block_diag(group_blocks, shape=(out_size, arg_size))
 
-    @classmethod
-    @CachedMethod
-    def _subspace_matrix_adjoint(cls, *args):
-        matrix = cls._subspace_matrix(*args)
-        adjoint = matrix.T.conj()
-        if sparse.isspmatrix(adjoint):
-            adjoint = adjoint.tocsr()
-        return adjoint
-
     @staticmethod
     def _full_matrix(input_basis, output_basis, *args):
         raise NotImplementedError()
@@ -1248,7 +1243,7 @@ class SpectralOperator1D(SpectralOperator):
             if adjoint:
                 # arg += adjoint(matrix) @ out
                 data_axis = self.last_axis + len(out.tensorsig)
-                apply_matrix(self.subspace_matrix_adjoint(layout), out.data, data_axis, out=arg.data, overwrite_out=False)
+                apply_matrix(self.subspace_matrix(layout), out.data, data_axis, out=arg.data, overwrite_out=False, adjoint=True)
             else:
                 # out = matrix @ arg
                 data_axis = self.last_axis + len(arg.tensorsig)
@@ -1398,10 +1393,6 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
     def subspace_matrix(self, layout):
         """Build matrix operating on global subspace data."""
         return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, self.position)
-
-    def subspace_matrix_adjoint(self, layout):
-        """Build matrix operating on global subspace data."""
-        return self._subspace_matrix_adjoint(layout, self.input_basis, self.output_basis, self.first_axis, self.position)
 
     def _expand_multiply(self, operand, vars):
         """Expand over multiplication."""
@@ -2467,22 +2458,24 @@ class SpinSkew(Skew):
             factors[azimuth_index] = sparse.kron(id_m, mul_1j)
         return reduce(sparse.kron, factors, 1).tocsr()
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        arg = self.args[0]
+        arg = args[0]
         index = self.index
         azimuth_axis = self.azimuth_axis
         rank = len(self.tensorsig)
-        # Set output layout
-        out.preset_layout(arg.layout)
         # Apply skew
         if arg.data.size:
             if arg.layout.grid_space[azimuth_axis+1]:
                 # Left handed
                 sx = axslice(self.index, 0, 1)
                 sy = axslice(self.index, 1, 2)
-                out.data[sx] = arg.data[sy]
-                np.multiply(arg.data[sx], -1, out=out.data[sy])
+                if adjoint:
+                    arg.data[sx] -= out.data[sy]
+                    arg.data[sy] += out.data[sx]
+                else:
+                    out.data[sx] = arg.data[sy]
+                    np.multiply(arg.data[sx], -1, out=out.data[sy])
             else:
                 # Spinorder: -, +
                 minus = axslice(index, 0, 1)
@@ -2492,18 +2485,28 @@ class SpinSkew(Skew):
                 out_plus = out.data[plus]
                 out_minus = out.data[minus]
                 if is_complex_dtype(self.dtype):
-                    # out = 1j * s * arg
-                    np.multiply(arg_plus, 1j, out=out_plus)
-                    np.multiply(arg_minus, -1j, out=out_minus)
+                    if adjoint:
+                        arg_plus += np.multiply(out_plus, -1j) # TEMPORARY
+                        arg_minus += np.multiply(out_minus, 1j) # TEMPORARY
+                    else:
+                        # out = 1j * s * arg
+                        np.multiply(arg_plus, 1j, out=out_plus)
+                        np.multiply(arg_minus, -1j, out=out_minus)
                 else:
                     # out_cos + 1j * out_msin = (1j * s) * (arg_cos + 1j * arg_msin)
                     #                         = - s * arg_msin +  1j * s * arg_cos
                     cos = axslice(rank+azimuth_axis, 0, None, 2)
                     msin = axslice(rank+azimuth_axis, 1, None, 2)
-                    np.multiply(arg_plus[msin], -1, out=out_plus[cos])
-                    copyto(out_plus[msin], arg_plus[cos])
-                    copyto(out_minus[cos], arg_minus[msin])
-                    np.multiply(arg_minus[cos], -1, out=out_minus[msin])
+                    if adjoint:
+                        arg_plus[msin] -= out_plus[cos]
+                        arg_plus[cos] += out_plus[msin]
+                        arg_minus[msin] += out_minus[cos]
+                        arg_minus[cos] -= out_minus[msin]
+                    else:
+                        np.multiply(arg_plus[msin], -1, out=out_plus[cos])
+                        copyto(out_plus[msin], arg_plus[cos])
+                        copyto(out_minus[cos], arg_minus[msin])
+                        np.multiply(arg_minus[cos], -1, out=out_minus[msin])
 
 
 class Component(LinearOperator):
@@ -3278,11 +3281,10 @@ class PolarMOperator(SpectralOperator):
                     vec_in  = comp_in[tuple(slices)]
                     vec_out = comp_out[tuple(slices)]
                     if vec_in.size and vec_out.size:
+                        matrix = self.radial_matrix(spinindex_in, spinindex_out, m)
                         if adjoint:
-                            matrix = self.radial_matrix_adjoint(spinindex_in, spinindex_out, m)
-                            vec_in += apply_matrix(matrix, vec_out, axis=axis) # TEMPORARY
+                            vec_in += apply_matrix(matrix, vec_out, axis=axis, adjoint=True) # TEMPORARY
                         else:
-                            matrix = self.radial_matrix(spinindex_in, spinindex_out, m)
                             vec_out += apply_matrix(matrix, vec_in, axis=axis) # TEMPORARY
 
     def subproblem_matrix(self, subproblem):
@@ -3324,14 +3326,6 @@ class PolarMOperator(SpectralOperator):
 
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         raise NotImplementedError()
-
-    @CachedMethod
-    def radial_matrix_adjoint(self, spinindex_in, spinindex_out, m):
-        matrix = self.radial_matrix(spinindex_in, spinindex_out, m)
-        adjoint = matrix.T.conj()
-        if sparse.isspmatrix(adjoint):
-            adjoint = adjoint.tocsr()
-        return adjoint
 
 
 class MulCosine(PolarMOperator, metaclass=MultiClass):
@@ -3508,11 +3502,10 @@ class SphericalEllOperator(SpectralOperator):
                         vec_in  = comp_in[tuple(slices)]
                         vec_out = comp_out[tuple(slices)]
                         if vec_in.size and vec_out.size:
+                            A = self.radial_matrix(regindex_in, regindex_out, ell)
                             if adjoint:
-                                matrix = self.radial_matrix_adjoint(regindex_in, regindex_out, ell)
-                                vec_in += apply_matrix(matrix, vec_out, axis=axis) # TEMPORARY
+                                vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True) # TEMPORARY
                             else:
-                                A = self.radial_matrix(regindex_in, regindex_out, ell)
                                 vec_out += apply_matrix(A, vec_in, axis=axis) # TEMPORARY
 
     def subproblem_matrix(self, subproblem):
@@ -3584,14 +3577,6 @@ class SphericalEllOperator(SpectralOperator):
 
     def radial_matrix(regindex_in, regindex_out, ell):
         raise NotImplementedError()
-
-    @CachedMethod
-    def radial_matrix_adjoint(self, regindex_in, regindex_out, ell):
-        matrix = self.radial_matrix(regindex_in, regindex_out, ell)
-        adjoint = matrix.T.conj()
-        if sparse.isspmatrix(adjoint):
-            adjoint = adjoint.tocsr()
-        return adjoint
 
 
 class SphericalGradient(Gradient, SphericalEllOperator):
@@ -4248,14 +4233,6 @@ class SphericalCurl(Curl, SphericalEllOperator):
         else:
             raise ValueError("This should never happen")
 
-    @CachedMethod
-    def radial_matrix_adjoint(self, regindex_in, regindex_out, ell):
-        matrix = self.radial_matrix(regindex_in, regindex_out, ell)
-        adjoint = matrix.T.conj()
-        if sparse.isspmatrix(adjoint):
-            adjoint = adjoint.tocsr()
-        return adjoint
-
     @staticmethod
     @CachedMethod
     def _radial_matrix(radial_basis, regindex_in0, regindex_out0, regtotal_in, regtotal_out, ell):
@@ -4353,11 +4330,10 @@ class SphericalCurl(Curl, SphericalEllOperator):
                             vec_in_cos = comp_in[tuple(slices)][cos_slice]
                             vec_in_msin = comp_in[tuple(slices)][msin_slice]
                             vec_in_complex = vec_in_cos + 1j*vec_in_msin
+                        A = self.radial_matrix(regindex_in, regindex_out, ell)
                         if adjoint:
-                            matrix = self.radial_matrix_adjoint(regindex_in, regindex_out, ell)
-                            vec_in_complex = apply_matrix(matrix, vec_out_complex, axis=axis) # TEMPORARY
+                            vec_in_complex = apply_matrix(A, vec_out_complex, axis=axis, adjoint=True) # TEMPORARY
                         else:
-                            A = self.radial_matrix(regindex_in, regindex_out, ell)
                             vec_out_complex = apply_matrix(A, vec_in_complex, axis=axis)
                         if adjoint:
                             comp_in[tuple(slices)][cos_slice] += vec_in_complex.real

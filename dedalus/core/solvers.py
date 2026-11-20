@@ -809,8 +809,6 @@ class InitialValueSolver(SolverBase):
         self.stop_iteration = np.inf
         # For adjoint
         self.adjoint_state = []
-        self.parameters_adj = []
-        self.parameters = []
         logger.debug('Finished IVP instantiation')
 
     @property
@@ -942,7 +940,7 @@ class InitialValueSolver(SolverBase):
         # reset timestepper
         self.timestepper.reset()
 
-    def step_adjoint(self, dt):
+    def step_adjoint(self, dt, cotangents):
         """Advance system by one iteration/timestep."""
         # Enforce Hermitian symmetry for real variables
         if np.isrealobj(self.dtype.type()):
@@ -955,7 +953,7 @@ class InitialValueSolver(SolverBase):
         if self.iteration == self.stop_iteration:
             self.adjoint_start_time = wall_time
         wall_elapsed = wall_time - self.adjoint_start_time
-        self.timestepper.step_adjoint(dt, wall_elapsed)
+        self.timestepper.step_adjoint(dt, wall_elapsed, cotangents)
         # Update iteration
         self.iteration -= 1
         self.dt = dt # Needed?
@@ -987,15 +985,11 @@ class InitialValueSolver(SolverBase):
     def compute_sensitivities(self, cotangents, checkpoints={}, timestep_function=None, log_cadence=100):
         """Accumulate cotangents through an IVP solve"""
         # Allocate adjoint fields
-        self.state_adj = []
-        for (i,state) in enumerate(self.state):
-            if state in cotangents:
-                self.state_adj.append(cotangents[state])
-            else:
+        for state in self.state:
+            if state not in cotangents:
                 adjoint_state = state.get_cotangent()
                 adjoint_state.preset_layout('c')
-                adjoint_state.data *= 0
-                self.state_adj.append(adjoint_state)
+                adjoint_state.data.fill(0)
                 cotangents[state] = adjoint_state
         # Evolve adjoint backwards
         try:
@@ -1008,7 +1002,7 @@ class InitialValueSolver(SolverBase):
                     timestep = timestep_function()
                 else:
                     timestep = None
-                self.step_adjoint(timestep)
+                self.step_adjoint(timestep, cotangents)
                 if (self.iteration-1) % log_cadence == 0:
                     logger.info(f"Adjoint: Iteration={self.iteration}, Time={self.sim_time:e}")
         except:
